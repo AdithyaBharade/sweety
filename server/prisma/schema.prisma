@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url       = env("DATABASE_URL")
+  // Direct (non-pooled) connection used by `prisma migrate`.
+  // Locally this is the same as DATABASE_URL; on Neon it is the host without "-pooler".
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  readings     Reading[]
+
+  @@map("users")
+}
+
+/// Declaration order matters: Postgres sorts enum values in this order,
+/// so `orderBy: { slot: 'asc' }` returns readings in the natural order of the day.
+enum Slot {
+  MORNING_FASTING
+  AFTER_BREAKFAST
+  AFTER_LUNCH
+  AFTER_DINNER
+}
+
+model Reading {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  date      DateTime @db.Date
+  slot      Slot
+  value     Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One reading per slot per day. With only 4 slots this also caps a day at 4 readings,
+  // so both rules are guaranteed by the database even under concurrent requests.
+  @@unique([userId, date, slot])
+  @@index([userId, date])
+  @@map("readings")
+}
