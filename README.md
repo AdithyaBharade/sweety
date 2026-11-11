@@ -287,4 +287,20 @@ Slots: `MORNING_FASTING`, `AFTER_BREAKFAST`, `AFTER_LUNCH`, `AFTER_DINNER`.
 
 ## Screenshots
 
-_Add screenshots / a short recording here:_ `docs/login.png`, `docs/dashboard.png`, `docs/reports.png`
+**Live demo:** https://sweety-umber.vercel.app/ (demo login: `demo@sweety.app` / `demo1234`)
+
+**Login**
+
+![Login page](docs/login.png)
+
+**Dashboard** – today's slots, the add-reading form and paginated history
+
+![Dashboard](docs/dashboard.png)
+
+**Delete confirmation**
+
+![Delete confirmation dialog](docs/delete-reading.png)
+
+**Reports** – daily, month-to-date and previous-month summaries with the monthly chart
+
+![Reports](docs/reports.png)
