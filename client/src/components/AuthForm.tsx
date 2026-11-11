@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { AlertCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { getApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { validateAuthForm, type AuthFieldErrors } from '@/lib/authValidation';
 import Logo from '@/components/Logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,9 @@ export default function AuthForm({ mode }: { mode: Mode }) {
   const { user, login, register } = useAuth();
   const router = useRouter();
   const [values, setValues] = useState({ name: '', email: '', password: '' });
+  // `error` is from the API; `fieldErrors` are the instant client-side checks.
   const [error, setError] = useState<{ error: string; field?: string } | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const isRegister = mode === 'register';
@@ -35,10 +38,15 @@ export default function AuthForm({ mode }: { mode: Mode }) {
   const set = (field: keyof typeof values) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setValues((v) => ({ ...v, [field]: e.target.value }));
     setError(null);
+    setFieldErrors((errs) => ({ ...errs, [field]: undefined }));
   };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const found = validateAuthForm(values, mode);
+    setFieldErrors(found);
+    if (Object.keys(found).length) return;
+
     setBusy(true);
     try {
       if (isRegister) await register(values.name, values.email, values.password);
@@ -51,8 +59,11 @@ export default function AuthForm({ mode }: { mode: Mode }) {
     }
   }
 
-  const fieldError = (f: string) =>
-    error?.field === f ? <p className="text-sm text-destructive">{error.error}</p> : null;
+  const messageFor = (f: keyof AuthFieldErrors) => fieldErrors[f] ?? (error?.field === f ? error.error : undefined);
+  const fieldError = (f: keyof AuthFieldErrors) => {
+    const message = messageFor(f);
+    return message ? <p className="text-sm text-destructive">{message}</p> : null;
+  };
 
   return (
     <main className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4 py-10">
@@ -82,7 +93,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
               {isRegister && (
                 <div className="space-y-2">
                   <Label htmlFor="name">Name</Label>
-                  <Input id="name" value={values.name} onChange={set('name')} autoComplete="name" aria-invalid={error?.field === 'name'} />
+                  <Input id="name" value={values.name} onChange={set('name')} autoComplete="name" aria-invalid={!!messageFor('name')} />
                   {fieldError('name')}
                 </div>
               )}
@@ -95,7 +106,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
                   value={values.email}
                   onChange={set('email')}
                   autoComplete="email"
-                  aria-invalid={error?.field === 'email'}
+                  aria-invalid={!!messageFor('email')}
                 />
                 {fieldError('email')}
               </div>
@@ -109,7 +120,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
                     value={values.password}
                     onChange={set('password')}
                     autoComplete={isRegister ? 'new-password' : 'current-password'}
-                    aria-invalid={error?.field === 'password'}
+                    aria-invalid={!!messageFor('password')}
                   />
                   <Button
                     type="button"
@@ -123,7 +134,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
                     {showPassword ? <EyeOff /> : <Eye />}
                   </Button>
                 </div>
-                {isRegister && !error?.field && (
+                {isRegister && !messageFor('password') && (
                   <p className="text-xs text-muted-foreground">At least 8 characters.</p>
                 )}
                 {fieldError('password')}
