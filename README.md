@@ -1,5 +1,7 @@
 # 🩸 Sweety – Blood Glucose Tracker
 
+[![CI](https://github.com/AdithyaBharade/sweety/actions/workflows/ci.yml/badge.svg)](https://github.com/AdithyaBharade/sweety/actions/workflows/ci.yml)
+
 Sweety is a small web app where a diabetes patient records up to **4 blood glucose readings a day**
 and views **daily, month-to-date and previous-month reports**.
 
@@ -41,7 +43,9 @@ and views **daily, month-to-date and previous-month reports**.
 - ✅ Pagination: `GET /api/readings?page=1&limit=20`
 - ✅ Chart: line chart of this month's readings, one line per slot (Recharts)
 - ✅ Docker: `docker-compose.yml` that starts PostgreSQL (app + test databases)
-- ✅ Frontend tests: React Testing Library tests for the reading form
+- ✅ Frontend tests: React Testing Library tests for the reading form (plus the auth form and reports)
+- ✅ CI: GitHub Actions runs the API unit + integration tests (against a real PostgreSQL) and the
+  client typecheck, tests and production build on every push
 
 ---
 
@@ -158,9 +162,15 @@ cd server && npm run test:unit
 # Integration tests are skipped automatically if TEST_DATABASE_URL is not set.
 npm test
 
-# Client: React Testing Library tests for the reading form
+# Client: React Testing Library tests (reading form, auth form, reports, API client)
 cd ../client && npm test
 ```
+
+| Suite | What it covers |
+| ----- | -------------- |
+| `server/tests/unit` | Validation rules, report date ranges, stats rounding, time zones, config/secret checks, HTTP hardening |
+| `server/tests/integration` | Real HTTP + DB: auth, logout/token revocation, per-day rules, ownership, pagination, reports |
+| `client/src/**/__tests__` | Reading and auth forms (validation, error messages, accessibility), report cards, date formatting, API client |
 
 ---
 
@@ -230,6 +240,18 @@ Slots: `MORNING_FASTING`, `AFTER_BREAKFAST`, `AFTER_LUNCH`, `AFTER_DINNER`.
 - **Login errors are generic** ("Invalid email or password.") so emails can't be probed.
 - Validation lives in small pure functions, so it is easy to unit-test without a database.
 
+### Security
+- **Passwords:** bcrypt (10 rounds), 8–72 characters (bcrypt ignores bytes after 72).
+- **Tokens:** HS256 JWTs signed with a required 32+ character secret; the API won't start with a
+  missing or placeholder secret. Logging out bumps the user's `tokenVersion`, revoking every
+  earlier token, and each request checks the user still exists.
+- **Brute force:** login and sign-up are rate-limited per IP (`AUTH_RATE_LIMIT`, default 20 per 15 min).
+- **Headers & input:** `helmet` security headers, 10 kB JSON body limit, strict number parsing,
+  and out-of-range ids/pages return 4xx instead of database errors.
+- **Enumeration:** login gives the same message and similar timing for unknown emails and wrong passwords.
+- **Dependencies:** `npm audit --omit=dev` is clean on both apps (npm `overrides` pin patched
+  `postcss` inside Next.js and `deepmerge-ts` inside Prisma).
+
 ### Assumptions
 - "Today" for the *future date* rule is the user's own date: the client sends its time zone in
   `X-Timezone`, so the server and the date picker agree. If it's missing or invalid, the server
@@ -258,7 +280,7 @@ Slots: `MORNING_FASTING`, `AFTER_BREAKFAST`, `AFTER_LUNCH`, `AFTER_DINNER`.
   zod) instead of keeping two copies in sync.
 - Redis caching of reports, a BullMQ reminder job and a doctor role (the remaining bonus tasks).
 - Let users mark readings as "before/after meal" notes, and export reports to PDF/CSV.
-- End-to-end tests with Playwright, plus CI (GitHub Actions) running all test suites.
+- End-to-end tests with Playwright (CI already runs the unit, integration and component tests).
 - Better accessibility testing and a dark mode.
 
 ---
