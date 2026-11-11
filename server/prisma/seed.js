@@ -34,6 +34,16 @@ function rand() {
 const between = ([min, max]) => Math.round(min + rand() * (max - min));
 
 async function main() {
+  // The demo password is public (it's in the README), so never create it on a real
+  // deployment by accident. Set ALLOW_DEMO_SEED=true to seed a shared demo server on purpose.
+  const isLocalDb = /@(localhost|127\.0\.0\.1)(:|\/)/.test(process.env.DATABASE_URL || '');
+  const risky = process.env.NODE_ENV === 'production' || !isLocalDb;
+  if (risky && process.env.ALLOW_DEMO_SEED !== 'true') {
+    throw new Error(
+      'Refusing to create the demo account (public password) on a production or remote database. ' +
+        'Set ALLOW_DEMO_SEED=true to override.'
+    );
+  }
   const passwordHash = await bcrypt.hash(DEMO.password, 10);
   const user = await prisma.user.upsert({
     where: { email: DEMO.email },

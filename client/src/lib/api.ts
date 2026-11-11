@@ -16,11 +16,23 @@ export const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach the JWT to every request.
+/** The browser's IANA time zone, e.g. 'Australia/Sydney' (undefined if unavailable). */
+function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Attach the JWT and the user's time zone to every request. The API uses the time zone to
+// decide what "today" is, so it agrees with the date picker (which uses the browser's date).
 http.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem(TOKEN_KEY);
     if (token) config.headers.Authorization = `Bearer ${token}`;
+    const tz = browserTimeZone();
+    if (tz) config.headers['X-Timezone'] = tz;
   }
   return config;
 });
@@ -53,6 +65,10 @@ export const authApi = {
   login: (body: { email: string; password: string }) =>
     http.post<AuthResponse>('/auth/login', body).then((r) => r.data),
   me: () => http.get<{ user: User }>('/auth/me').then((r) => r.data.user),
+  /** Revokes the token on the server. The token is passed explicitly because it is
+   *  removed from localStorage right after this call. */
+  logout: (token: string) =>
+    http.post('/auth/logout', null, { headers: { Authorization: `Bearer ${token}` } }),
 };
 
 export const readingsApi = {

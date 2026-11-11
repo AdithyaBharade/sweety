@@ -49,6 +49,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    // Revoke on the server too, so a copied/stolen token stops working. Best effort:
+    // the user is logged out locally even if the API can't be reached.
+    if (token) authApi.logout(token).catch(() => {});
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
   }, []);

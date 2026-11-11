@@ -18,7 +18,9 @@ and views **daily, month-to-date and previous-month reports**.
 ## Features
 
 **Required**
-- Sign up / log in (name, email, password). Passwords are hashed with bcrypt; a JWT is returned.
+- Sign up / log in (name, email, password of 8–72 characters). Passwords are hashed with bcrypt;
+  a JWT is returned. Login and sign-up are rate-limited per IP, and logging out revokes the token
+  on the server.
 - Every reading query is filtered by the logged-in user, so users only ever see their own data.
 - Add, view, edit and delete readings (date, time slot, value in mg/dl).
 - Validation on **both** the client (instant feedback) and the server (source of truth):
@@ -119,12 +121,15 @@ Then update `DATABASE_URL`, `DIRECT_URL` and `TEST_DATABASE_URL` in `server/.env
 
 ```bash
 cd server
-cp .env.example .env        # then edit if needed
+cp .env.example .env        # then set JWT_SECRET (see below) and edit if needed
+openssl rand -hex 32        # paste the output into JWT_SECRET - the API won't start without it
 npx prisma migrate deploy   # creates tables from prisma/migrations
 npm run db:seed             # demo user + sample readings
 ```
 
-Demo login: **`demo@sweety.app` / `demo1234`**
+Demo login: **`demo@sweety.app` / `demo1234`**. Because this password is public, the seed
+script refuses to run against a production or non-local database unless `ALLOW_DEMO_SEED=true`,
+and the login page only shows the demo hint when `NEXT_PUBLIC_SHOW_DEMO_LOGIN=true`.
 
 ### 3. Run the API
 
@@ -169,22 +174,28 @@ cd ../client && npm test
 | `DIRECT_URL` | Direct (non-pooled) connection used by `prisma migrate` - same as `DATABASE_URL` locally |
 | `TEST_DATABASE_URL` | Separate Postgres DB for integration tests (wiped each run) |
 | `PORT` | API port (default 4000) |
-| `JWT_SECRET` | Secret used to sign login tokens |
-| `JWT_EXPIRES_IN` | Token lifetime, e.g. `7d` |
+| `JWT_SECRET` | **Required.** Secret used to sign login tokens, at least 32 characters (`openssl rand -hex 32`). The API refuses to start with a missing, short or placeholder secret |
+| `JWT_EXPIRES_IN` | Token lifetime, e.g. `1d` (default) |
 | `CLIENT_ORIGIN` | Frontend URL allowed by CORS |
-| `APP_TIMEZONE` | Time zone used to decide "today" for the future-date rule (default `Asia/Kolkata`) |
+| `APP_TIMEZONE` | Fallback time zone for "today" when the client doesn't send one (default `Asia/Kolkata`) |
+| `TRUST_PROXY` | Number of reverse proxies in front of the API (`0` locally, usually `1` when hosted) so rate limiting sees real client IPs |
+| `AUTH_RATE_LIMIT` | Login/sign-up attempts allowed per IP per 15 minutes (default `20`) |
+| `ALLOW_DEMO_SEED` | Set to `true` to let `npm run db:seed` create the demo account on a production/remote DB |
 
 `client/.env.example`
 
 | Variable | Purpose |
 | -------- | ------- |
 | `NEXT_PUBLIC_API_URL` | Base URL of the API, e.g. `http://localhost:4000/api` |
+| `NEXT_PUBLIC_SHOW_DEMO_LOGIN` | `true` to show the demo account on the login page |
 
 ---
 
 ## API
 
 All endpoints except register/login need `Authorization: Bearer <token>`.
+The client also sends `X-Timezone: <IANA zone>` (e.g. `Australia/Sydney`); the API uses it to
+decide what "today" is, falling back to `APP_TIMEZONE`.
 Errors always look like `{ "error": "message", "field": "value" }` (`field` is optional).
 
 | Method | Path | Description |
@@ -192,6 +203,7 @@ Errors always look like `{ "error": "message", "field": "value" }` (`field` is o
 | POST | `/api/auth/register` | `{ name, email, password }` → `{ token, user }` |
 | POST | `/api/auth/login` | `{ email, password }` → `{ token, user }` |
 | GET | `/api/auth/me` | Current user |
+| POST | `/api/auth/logout` | Revokes all of the user's tokens (204) |
 | GET | `/api/readings?page=1&limit=20&from=&to=` | Paginated readings, newest first |
 | POST | `/api/readings` | `{ date: "YYYY-MM-DD", slot, value }` |
 | PUT | `/api/readings/:id` | Same body as POST |
@@ -219,8 +231,9 @@ Slots: `MORNING_FASTING`, `AFTER_BREAKFAST`, `AFTER_LUNCH`, `AFTER_DINNER`.
 - Validation lives in small pure functions, so it is easy to unit-test without a database.
 
 ### Assumptions
-- "Today" for the *future date* rule uses the server's `APP_TIMEZONE` (default India time). The
-  client also blocks future dates using the browser's local date.
+- "Today" for the *future date* rule is the user's own date: the client sends its time zone in
+  `X-Timezone`, so the server and the date picker agree. If it's missing or invalid, the server
+  uses `APP_TIMEZONE` (default India time).
 - Values must be **whole numbers**. A decimal such as `120.5` is rejected with "Value must be a
   whole number." The spec's example message is used when the value is out of range.
 - When a day already has 4 readings, "You can add only 4 readings per day." is shown instead of
@@ -232,11 +245,15 @@ Slots: `MORNING_FASTING`, `AFTER_BREAKFAST`, `AFTER_LUNCH`, `AFTER_DINNER`.
   edited does not count against itself.
 - I used `bcryptjs` (a pure-JS implementation of bcrypt with the same hash format) so that
   install never needs native build tools.
-- The JWT is kept in `localStorage` to keep the app simple. See improvements below.
+- The JWT is kept in `localStorage` to keep the app simple. To limit the damage if one leaks,
+  tokens last 1 day by default, and each one carries the user's `tokenVersion`: logging out bumps
+  it, which revokes every earlier token. Every request also checks the user still exists.
 
 ### What I'd improve with more time
 - Store the token in an **httpOnly cookie** (safer against XSS) and add refresh tokens.
-- Rate-limit the login and register endpoints, and add `helmet` security headers.
+- Move the rate limiter to a shared store (e.g. Redis) when running more than one API instance.
+- Upgrade to Prisma 7 and Next.js 16 (npm `overrides` currently pin patched `postcss` and
+  `deepmerge-ts` versions inside them).
 - Share the validation rules between client and server (one package, or a schema library like
   zod) instead of keeping two copies in sync.
 - Redis caching of reports, a BullMQ reminder job and a doctor role (the remaining bonus tasks).

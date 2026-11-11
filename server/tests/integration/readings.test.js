@@ -41,7 +41,7 @@ describeDb('Readings API', () => {
       await patient.post('/api/readings', { date: day, slot, value: 120 });
     }
     const res = await patient.post('/api/readings', { date: day, slot: 'AFTER_DINNER', value: 120 });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
     expect(res.body.error).toBe('You can add only 4 readings per day.');
   });
 
@@ -56,6 +56,17 @@ describeDb('Readings API', () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Date cannot be in the future.');
+  });
+
+  it("uses the user's time zone (X-Timezone) to decide what today is", async () => {
+    // Pacific/Kiritimati (UTC+14) is always on or ahead of the server's default zone.
+    const tz = 'Pacific/Kiritimati';
+    const theirToday = todayInTimeZone(tz);
+    const res = await patient
+      .post('/api/readings', { date: theirToday, slot: 'MORNING_FASTING', value: 100 })
+      .set('X-Timezone', tz);
+    expect(res.status).toBe(201);
+    await patient.del(`/api/readings/${res.body.id}`);
   });
 
   it.each([
@@ -114,6 +125,22 @@ describeDb('Readings API', () => {
     expect(del.status).toBe(204);
     const again = await patient.del(`/api/readings/${created.body.id}`);
     expect(again.status).toBe(404);
+  });
+
+  it.each(['99999999999', '1e3', '-1', 'abc'])('treats impossible id %p as not found', async (id) => {
+    expect((await patient.del(`/api/readings/${id}`)).status).toBe(404);
+    expect((await patient.put(`/api/readings/${id}`, { date: DAY, slot: 'AFTER_DINNER', value: 100 })).status).toBe(404);
+  });
+
+  it.each([
+    ['page=99999999999', 'page'],
+    ['page=300000000&limit=100', 'page'],
+    ['limit=1.5', 'limit'],
+    ['from=2025-10-20&to=2025-10-01', 'from'],
+  ])('rejects bad list params (%s) with 400', async (query, field) => {
+    const res = await patient.get(`/api/readings?${query}`);
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe(field);
   });
 
   it("never shows or changes another user's readings", async () => {

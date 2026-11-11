@@ -33,6 +33,7 @@ async function registerUser(email = `user${Date.now()}${Math.random()}@test.dev`
   const auth = { Authorization: `Bearer ${res.body.token}` };
   return {
     user: res.body.user,
+    token: res.body.token,
     get: (url) => request(app).get(url).set(auth),
     post: (url, body) => request(app).post(url).set(auth).send(body),
     put: (url, body) => request(app).put(url).set(auth).send(body),

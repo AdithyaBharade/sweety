@@ -1,7 +1,12 @@
 const prisma = require('../lib/prisma');
 const { SLOT_LABELS, MAX_READINGS_PER_DAY } = require('../utils/slots');
 const { toDbDate, fromDbDate } = require('../utils/dates');
-const { badRequest, conflict, notFound } = require('../utils/errors');
+const {
+  conflict,
+  notFound,
+  PRISMA_UNIQUE_VIOLATION,
+  PRISMA_RECORD_NOT_FOUND,
+} = require('../utils/errors');
 
 /** Shape returned to the client. */
 function serialize(reading) {
@@ -33,22 +38,27 @@ async function assertDayRules(userId, { date, slot }, excludeId) {
   });
 
   if (sameDay.length >= MAX_READINGS_PER_DAY) {
-    throw badRequest(`You can add only ${MAX_READINGS_PER_DAY} readings per day.`, 'date');
+    throw conflict(`You can add only ${MAX_READINGS_PER_DAY} readings per day.`, 'date');
   }
   if (sameDay.some((r) => r.slot === slot)) {
     throw duplicateSlotError(slot);
   }
 }
 
+const readingNotFound = () => notFound('Reading not found.');
+
 /**
- * The unique (userId, date, slot) index is the final safety net: if two requests
- * race past assertDayRules, Postgres rejects the second one with P2002.
+ * Turns database race conditions into the same friendly errors as the checks above:
+ *  - P2002: two requests raced past assertDayRules; the unique (userId, date, slot) index
+ *    rejected the second one.
+ *  - P2025: the reading was deleted (or is not ours) between the check and the write.
  */
-async function withUniqueGuard(slot, fn) {
+async function withDbGuards(slot, fn) {
   try {
     return await fn();
   } catch (err) {
-    if (err.code === 'P2002') throw duplicateSlotError(slot);
+    if (err.code === PRISMA_UNIQUE_VIOLATION && slot) throw duplicateSlotError(slot);
+    if (err.code === PRISMA_RECORD_NOT_FOUND) throw readingNotFound();
     throw err;
   }
 }
@@ -82,7 +92,7 @@ async function listReadings(userId, { page, limit, from, to }) {
 
 async function createReading(userId, input) {
   await assertDayRules(userId, input);
-  const reading = await withUniqueGuard(input.slot, () =>
+  const reading = await withDbGuards(input.slot, () =>
     prisma.reading.create({
       data: { userId, date: toDbDate(input.date), slot: input.slot, value: input.value },
     })
@@ -93,16 +103,18 @@ async function createReading(userId, input) {
 async function getOwnedReading(userId, id) {
   // Filtering by userId means another user's reading looks exactly like a missing one.
   const reading = await prisma.reading.findFirst({ where: { id, userId } });
-  if (!reading) throw notFound('Reading not found.');
+  if (!reading) throw readingNotFound();
   return reading;
 }
 
 async function updateReading(userId, id, input) {
+  // Check ownership first so another user's id gets a 404, not a day-rule error.
   await getOwnedReading(userId, id);
   await assertDayRules(userId, input, id);
-  const reading = await withUniqueGuard(input.slot, () =>
+  const reading = await withDbGuards(input.slot, () =>
     prisma.reading.update({
-      where: { id },
+      // userId in the write itself, so ownership holds even if the row changed meanwhile.
+      where: { id, userId },
       data: { date: toDbDate(input.date), slot: input.slot, value: input.value },
     })
   );
@@ -110,8 +122,8 @@ async function updateReading(userId, id, input) {
 }
 
 async function deleteReading(userId, id) {
-  await getOwnedReading(userId, id);
-  await prisma.reading.delete({ where: { id } });
+  // One atomic statement: deletes only if the reading exists and belongs to this user.
+  await withDbGuards(null, () => prisma.reading.delete({ where: { id, userId } }));
 }
 
 module.exports = { serialize, listReadings, createReading, updateReading, deleteReading };

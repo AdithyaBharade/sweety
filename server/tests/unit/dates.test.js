@@ -1,6 +1,8 @@
 const {
   isValidDateString,
   todayInTimeZone,
+  isValidTimeZone,
+  todayForRequest,
   getReportRanges,
 } = require('../../src/utils/dates');
 
@@ -47,5 +49,27 @@ describe('todayInTimeZone', () => {
     const now = new Date('2026-10-14T20:00:00Z');
     expect(todayInTimeZone('UTC', now)).toBe('2026-10-14');
     expect(todayInTimeZone('Asia/Kolkata', now)).toBe('2026-10-15');
+  });
+});
+
+describe('todayForRequest', () => {
+  // 20:00 UTC on 10 Nov = 01:30 on 11 Nov in India, 07:00 on 11 Nov in Sydney, 12:00 on 10 Nov in LA.
+  const now = new Date('2026-11-10T20:00:00Z');
+  const req = (tz) => ({ get: (h) => (h.toLowerCase() === 'x-timezone' ? tz : undefined) });
+
+  it("uses the user's time zone from the X-Timezone header", () => {
+    expect(todayForRequest(req('Australia/Sydney'), 'Asia/Kolkata', now)).toBe('2026-11-11');
+    expect(todayForRequest(req('America/Los_Angeles'), 'Asia/Kolkata', now)).toBe('2026-11-10');
+  });
+
+  it.each([undefined, '', 'Not/AZone', 'x'.repeat(100)])('falls back to the app zone for %p', (tz) => {
+    expect(todayForRequest(req(tz), 'Asia/Kolkata', now)).toBe('2026-11-11');
+    expect(todayForRequest(req(tz), 'America/Los_Angeles', now)).toBe('2026-11-10');
+  });
+
+  it('validates IANA zones', () => {
+    expect(isValidTimeZone('Asia/Kolkata')).toBe(true);
+    expect(isValidTimeZone('Mars/Olympus')).toBe(false);
+    expect(isValidTimeZone(42)).toBe(false);
   });
 });

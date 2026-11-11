@@ -15,6 +15,9 @@ import { Label } from '@/components/ui/label';
 
 type Mode = 'login' | 'register';
 
+// The demo account has a public password, so only advertise it where it is meant to exist.
+const SHOW_DEMO_LOGIN = process.env.NEXT_PUBLIC_SHOW_DEMO_LOGIN === 'true';
+
 /** Shared form for the login and sign-up pages. */
 export default function AuthForm({ mode }: { mode: Mode }) {
   const { user, login, register } = useAuth();
@@ -120,6 +123,9 @@ export default function AuthForm({ mode }: { mode: Mode }) {
                     {showPassword ? <EyeOff /> : <Eye />}
                   </Button>
                 </div>
+                {isRegister && !error?.field && (
+                  <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+                )}
                 {fieldError('password')}
               </div>
             </CardContent>
@@ -146,7 +152,7 @@ export default function AuthForm({ mode }: { mode: Mode }) {
           </form>
         </Card>
 
-        {!isRegister && (
+        {!isRegister && SHOW_DEMO_LOGIN && (
           <p className="rounded-lg border border-dashed bg-background px-3 py-2 text-center text-xs text-muted-foreground">
             Demo account: <span className="font-mono">demo@sweety.app</span> / <span className="font-mono">demo1234</span>
           </p>

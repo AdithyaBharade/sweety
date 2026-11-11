@@ -28,6 +28,27 @@ function todayInTimeZone(timeZone, now = new Date()) {
   }).format(now);
 }
 
+/** True if `tz` is an IANA time zone this runtime knows, e.g. 'Australia/Sydney'. */
+function isValidTimeZone(tz) {
+  if (typeof tz !== 'string' || !tz || tz.length > 64) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * "Today" for this request: the user's own time zone (sent by the client in the
+ * `X-Timezone` header) when valid, otherwise the app's default zone. Without this,
+ * users east of the default zone could not log today's reading early in their morning.
+ */
+function todayForRequest(req, fallbackTimeZone, now = new Date()) {
+  const tz = req.get ? req.get('x-timezone') : undefined;
+  return todayInTimeZone(isValidTimeZone(tz) ? tz : fallbackTimeZone, now);
+}
+
 /** 'YYYY-MM-DD' -> Date at UTC midnight (what Prisma expects for @db.Date). */
 function toDbDate(dateString) {
   return new Date(`${dateString}T00:00:00.000Z`);
@@ -61,6 +82,8 @@ function getReportRanges(dateString) {
 module.exports = {
   isValidDateString,
   todayInTimeZone,
+  isValidTimeZone,
+  todayForRequest,
   toDbDate,
   fromDbDate,
   getReportRanges,

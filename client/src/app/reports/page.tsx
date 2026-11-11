@@ -24,7 +24,13 @@ function Reports() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!date) return;
+    if (!date) {
+      // The date input was cleared: don't keep showing the old date's results.
+      setData(null);
+      setError('');
+      setLoading(false);
+      return;
+    }
     let cancelled = false; // ignore stale responses when the date changes quickly
     setLoading(true);
     setError('');
@@ -66,6 +72,13 @@ function Reports() {
         <Alert variant="destructive" className="mb-6">
           <AlertCircle />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {!date && (
+        <Alert className="mb-6">
+          <CalendarDays />
+          <AlertDescription>Pick a date to see its reports.</AlertDescription>
         </Alert>
       )}
 

@@ -15,4 +15,20 @@ const unauthorized = (message = 'Please log in to continue.') => new AppError(40
 const notFound = (message = 'Not found.') => new AppError(404, message);
 const conflict = (message, field) => new AppError(409, message, field);
 
-module.exports = { AppError, badRequest, unauthorized, notFound, conflict };
+/** Largest value a Postgres INTEGER (and Prisma `Int`) can hold. */
+const MAX_INT = 2147483647;
+
+/** Prisma error codes we turn into friendly errors. */
+const PRISMA_UNIQUE_VIOLATION = 'P2002';
+const PRISMA_RECORD_NOT_FOUND = 'P2025';
+
+module.exports = {
+  AppError,
+  badRequest,
+  unauthorized,
+  notFound,
+  conflict,
+  MAX_INT,
+  PRISMA_UNIQUE_VIOLATION,
+  PRISMA_RECORD_NOT_FOUND,
+};
