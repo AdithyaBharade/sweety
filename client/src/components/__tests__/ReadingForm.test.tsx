@@ -91,4 +91,30 @@ describe('ReadingForm', () => {
     expect(slot).toHaveValue('AFTER_BREAKFAST');
     expect(value).toHaveValue(170);
   });
+
+  it('links the error to its field and moves focus there (screen-reader friendly)', async () => {
+    const { user, slot, value, submit } = setup();
+    await user.type(value, '120');
+    await user.click(submit);
+
+    const message = await screen.findByRole('alert');
+    expect(message).toHaveTextContent('Please choose a time slot.');
+    expect(slot).toHaveAttribute('aria-invalid', 'true');
+    expect(slot).toHaveAccessibleDescription('Please choose a time slot.');
+    expect(slot).toHaveFocus();
+  });
+
+  it('focuses the field named in an API error', async () => {
+    const onSubmit = vi.fn().mockRejectedValue({
+      error: 'You already have an After lunch reading for this date.',
+      field: 'slot',
+    });
+    const { user, slot, value, submit } = setup(onSubmit);
+    await user.selectOptions(slot, 'AFTER_LUNCH');
+    await user.type(value, '150');
+    await user.click(submit);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('You already have an After lunch reading for this date.');
+    expect(slot).toHaveFocus();
+  });
 });
